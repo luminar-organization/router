@@ -5,6 +5,7 @@ namespace Luminar\Router;
 use Exception;
 use Luminar\Core\Container\Container;
 use Luminar\Core\Container\DependencyInjection;
+use Luminar\Http\Request;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionMethod;
@@ -94,9 +95,74 @@ class Router
                 throw new RuntimeException("Method [$method] not found.");
             }
 
-            return call_user_func([$instance, $method], []);
+            $request = new Request($_GET, $this->getRequestBody($_SERVER["REQUEST_METHOD"]), $this->getRequestHeaders(), $_SERVER["REQUEST_METHOD"], $_SERVER["REQUEST_URI"], $_SERVER);
+
+            return call_user_func([$instance, $method], $request);
         }
 
         throw new RuntimeException("Invalid route Handler");
+    }
+
+    /**
+     * @return array
+     */
+    protected function getRequestHeaders(): array
+    {
+        if(function_exists('getallheaders')) {
+            return getallheaders();
+        }
+
+        $headers = [];
+        foreach($_SERVER as $key => $value) {
+            if(str_starts_with($key, "HTTP_")) {
+                $headerName = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($key, 5)))));
+                $headers[$headerName] = $value;
+            }
+        }
+
+        return $headers;
+    }
+    protected function getRequestBody(string $method)
+    {
+        $body = file_get_contents("php://input");
+        $contentType = $_SERVER["CONTENT_TYPE"] ?? '';
+
+        switch(true) {
+            case str_contains($contentType, 'application/json'):
+                return json_decode($body, true);
+            case str_contains($contentType, 'application/x-www-form-urlencoded'):
+                parse_str($body, $parsedBody);
+                return $parsedBody;
+            case str_contains($contentType, 'multipart/form-data'):
+                if($method !== 'POST') {
+                    return $this->parseMultipartFormData($body);
+                }
+                return $_POST;
+            default:
+                return $body;
+        }
+    }
+
+    protected function parseMultipartFormData(string $body): array {
+        $parsedData = [];
+        $boundary = substr($body, 0, strpos($body, "\r\n"));
+        $parts = array_slice(explode($boundary, $body), 1);
+
+        foreach ($parts as $part) {
+            if ($part == "--\r\n") break;
+
+            $part = ltrim($part, "\r\n");
+            [$headers, $value] = explode("\r\n\r\n", $part, 2);
+
+            $name = '';
+            if (preg_match('/name=\"([^\"]*)\"/', $headers, $matches)) {
+                $name = $matches[1];
+            }
+
+            $value = substr($value, 0, strlen($value) - 2);
+            $parsedData[$name] = $value;
+        }
+
+        return $parsedData;
     }
 }
