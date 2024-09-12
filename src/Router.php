@@ -95,7 +95,7 @@ class Router
                 throw new RuntimeException("Method [$method] not found.");
             }
 
-            $request = new Request($_GET, $this->getRequestBody($_SERVER["REQUEST_METHOD"]), $this->getRequestHeaders(), $_SERVER["REQUEST_METHOD"], $_SERVER["REQUEST_URI"], $_SERVER);
+            $request = new Request($_GET, $this->getRequestBody($_SERVER["REQUEST_METHOD"] ?? "GET"), $this->getRequestHeaders(), $_SERVER["REQUEST_METHOD"] ?? "GET", $_SERVER["REQUEST_URI"] ?? "/", $_SERVER ?? []);
 
             return call_user_func([$instance, $method], $request);
         }
