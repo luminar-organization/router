@@ -138,9 +138,11 @@ class Router
                     return $this->parseMultipartFormData($body);
                 }
                 return $_POST;
-            default:
-                return $body;
         }
+        if($body !== '') {
+            return json_decode($body, true) ?? [];
+        }
+        return [];
     }
 
     protected function parseMultipartFormData(string $body): array {
