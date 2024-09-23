@@ -5,6 +5,7 @@ namespace Luminar\Router;
 use Exception;
 use Luminar\Core\Container\Container;
 use Luminar\Core\Container\DependencyInjection;
+use Luminar\Core\Exceptions\DependencyInjectionException;
 use Luminar\Http\Request;
 use ReflectionClass;
 use ReflectionException;
@@ -49,15 +50,19 @@ class Router
             foreach ($attributes as $attribute) {
                 /** @var Route $route */
                 $route = $attribute->newInstance();
-                $this->addRoute($route->methods, $route->path, [$controllerClass, $method->getName()]);
+                $this->addRoute($route->methods, $route->path, [$controllerClass, $method->getName()], $route->middleware ?? null, $route->firewall ?? null);
             }
         }
     }
 
-    public function addRoute(array $methods, string $path, $handler): void
+    public function addRoute(array $methods, string $path, $handler, MiddlewareInterface $middleware = null, FirewallInterface $firewall = null): void
     {
         foreach ($methods as $method) {
-            $this->routes[$method][$path] = $handler;
+            $this->routes[$method][$path] = [
+                'handler' => $handler,
+                'middleware' => $middleware,
+                'firewall' => $firewall
+            ];
         }
     }
 
@@ -77,15 +82,35 @@ class Router
     }
 
     /**
-     * @param $handler
+     * @param array $route
      * @return mixed
-     * @throws Exception
      * @throws ReflectionException
+     * @throws DependencyInjectionException
      */
-    private function invoke($handler): mixed
+    private function invoke(array $route): mixed
     {
+        $request = new Request($_GET, $this->getRequestBody($_SERVER["REQUEST_METHOD"] ?? "GET"), $this->getRequestHeaders(), $_SERVER["REQUEST_METHOD"] ?? "GET", $_SERVER["REQUEST_URI"] ?? "/", $_SERVER ?? []);
+
+        $handler = $route['handler'];
+        $firewall = $route['firewall'];
+        if($firewall) {
+            if($firewall instanceof FirewallInterface) {
+                if(!$firewall->validate($request)) {
+                    return $firewall->onFail($request);
+                }
+            } else {
+                throw new Exception("Firewall is not instance of FirewallInterface!");
+            }
+        }
+        $middleware = $route['middleware'];
+        if($middleware and $middleware instanceof MiddlewareInterface) {
+            $middleware->before($request);
+        }
+
         if(is_callable($handler)) {
-            return $this->dependencyInjection->build($handler);
+            $response = $this->dependencyInjection->build($handler);
+            $middleware->after($request);
+            return $response;
         }
 
         if(is_array($handler)) {
@@ -95,9 +120,11 @@ class Router
                 throw new RuntimeException("Method [$method] not found.");
             }
 
-            $request = new Request($_GET, $this->getRequestBody($_SERVER["REQUEST_METHOD"] ?? "GET"), $this->getRequestHeaders(), $_SERVER["REQUEST_METHOD"] ?? "GET", $_SERVER["REQUEST_URI"] ?? "/", $_SERVER ?? []);
-
-            return call_user_func([$instance, $method], $request);
+            $response = call_user_func([$instance, $method], $request);
+            if($middleware) {
+                $middleware->after($request);
+            }
+            return $response;
         }
 
         throw new RuntimeException("Invalid route Handler");

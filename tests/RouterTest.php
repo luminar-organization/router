@@ -49,4 +49,29 @@ class RouterTest extends TestCase
         $response = $router->dispatch("GET", '/example');
         $this->assertEquals(ExampleController::$response, $response->getResponse());
     }
+
+    public function testMiddlewareRouter(): void
+    {
+        $router = new Router($this->container);
+        $router->registerRoutes("Luminar\\Router\\Tests\\SecondController");
+
+        /**
+         * @var Response $response
+         */
+        $response = $router->dispatch("GET", "/second");
+        $this->assertEquals("Hello World!", $response->getResponse());
+    }
+
+    public function testFirewallRouter(): void
+    {
+        $router = new Router($this->container);
+        $router->registerRoutes("Luminar\\Router\\Tests\\FirewallController");
+
+        /**
+         * @var Response $response
+         */
+        $response = $router->dispatch("GET", "/firewall");
+        $this->assertEquals(403, $response->getStatus());
+        $this->assertEquals("Firewall failed", $response->getResponse());
+    }
 }
