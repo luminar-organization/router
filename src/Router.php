@@ -70,7 +70,7 @@ class Router
      * @param string $method
      * @param string $path
      * @return mixed
-     * @throws ReflectionException
+     * @throws ReflectionException|DependencyInjectionException
      */
     public function dispatch(string $method, string $path): mixed
     {
@@ -78,6 +78,9 @@ class Router
             return $this->invoke($this->routes[$method][$path]);
         }
 
+        if(isset($this->routes["GET"]["/404"])) {
+            return $this->invoke($this->routes["GET"]["/404"]);
+        }
         throw new RuntimeException("Route not found.");
     }
 
