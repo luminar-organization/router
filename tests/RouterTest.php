@@ -74,4 +74,16 @@ class RouterTest extends TestCase
         $this->assertEquals(403, $response->getStatus());
         $this->assertEquals("Firewall failed", $response->getResponse());
     }
+
+    public function testRegexRouter(): void
+    {
+        $router = new Router($this->container);
+        $router->registerRoutes("Luminar\\Router\\Tests\\RegexController");
+
+        /**
+         * @var Response $response
+         */
+        $response = $router->dispatch("GET", "/regex/hello");
+        $this->assertEquals("hello", $response->getResponse());
+    }
 }

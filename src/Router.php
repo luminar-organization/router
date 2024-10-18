@@ -67,6 +67,43 @@ class Router
     }
 
     /**
+     * @param string $serverRequestUri
+     * @return string
+     */
+    public function getCurrentUri(string $serverRequestUri): string
+    {
+        $uri = rawurldecode($serverRequestUri);
+
+        if (str_contains($uri, '?')) {
+            $uri = substr($uri, 0, strpos($uri, '?'));
+        }
+
+        return '/' . trim($uri, '/');
+    }
+
+    /**
+     * @return string
+     */
+    protected function getBasePath(): string
+    {
+        return implode('/', array_slice(explode('/', $_SERVER['SCRIPT_NAME']), 0, -1)) . '/';
+    }
+
+    /**
+     * @param string $pattern
+     * @param string $uri
+     * @param $matches
+     * @param $flags
+     * @return bool
+     */
+    protected function patternMatch(string $pattern, string $uri, &$matches, $flags): bool
+    {
+        $pattern = preg_replace('/\/{(.*?)}/', '/(.*?)', $pattern);
+
+        return boolval(preg_match_all('#^' . $pattern . '$#', $uri, $matches, PREG_OFFSET_CAPTURE));
+    }
+
+    /**
      * @param string $method
      * @param string $path
      * @return mixed
@@ -74,25 +111,47 @@ class Router
      */
     public function dispatch(string $method, string $path): mixed
     {
-        if (isset($this->routes[$method][$path])) {
-            return $this->invoke($this->routes[$method][$path]);
+        if(!isset($this->routes[$method])) {
+            return $this->invoke($this->routes["GET"]["/404"], []);
+        }
+        $routes = $this->routes[$method];
+        foreach($routes as $routeKey => $routeValue) {
+            $is_match = $this->patternMatch($routeKey, $this->getCurrentUri($path), $matches, PREG_OFFSET_CAPTURE);
+
+            if($is_match) {
+                $matches = array_slice($matches, 1);
+
+                $params = array_map(function ($match, $index) use ($matches) {
+
+                    if (isset($matches[$index + 1]) && isset($matches[$index + 1][0]) && is_array($matches[$index + 1][0])) {
+                        if ($matches[$index + 1][0][1] > -1) {
+                            return trim(substr($match[0][0], 0, $matches[$index + 1][0][1] - $match[0][1]), '/');
+                        }
+                    }
+
+                    return isset($match[0][0]) && $match[0][1] != -1 ? trim($match[0][0], '/') : null;
+                }, $matches, array_keys($matches));
+
+                return $this->invoke($routeValue, $params);
+            }
         }
 
         if(isset($this->routes["GET"]["/404"])) {
-            return $this->invoke($this->routes["GET"]["/404"]);
+            return $this->invoke($this->routes["GET"]["/404"], []);
         }
         throw new RuntimeException("Route not found.");
     }
 
     /**
      * @param array $route
+     * @param array $params
      * @return mixed
      * @throws ReflectionException
      * @throws DependencyInjectionException
      */
-    private function invoke(array $route): mixed
+    private function invoke(array $route, array $params): mixed
     {
-        $request = new Request($_GET, $this->getRequestBody($_SERVER["REQUEST_METHOD"] ?? "GET"), $this->getRequestHeaders(), $_SERVER["REQUEST_METHOD"] ?? "GET", $_SERVER["REQUEST_URI"] ?? "/", $_SERVER ?? []);
+        $request = new Request($_GET, $this->getRequestBody($_SERVER["REQUEST_METHOD"] ?? "GET"), $this->getRequestHeaders(), $_SERVER["REQUEST_METHOD"] ?? "GET", $_SERVER["REQUEST_URI"] ?? "/", $_SERVER ?? [], $params ?? []);
 
         $handler = $route['handler'];
         $firewall = $route['firewall'];
